@@ -38,7 +38,7 @@ venv.bak/
 .env
 
 # SQLite local databases (optional: keep schema.sql & init_db.py for bootstrapping)
-# database/*.db
+database/*.db
 
 # IDE configurations
 .idea/
