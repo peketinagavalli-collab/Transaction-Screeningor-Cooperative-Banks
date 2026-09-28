@@ -6,6 +6,9 @@ from models.payee import Payee
 from models.transaction import Transaction
 from models.screening_result import ScreeningResult
 from models.otp_verification import OTPVerification
+from models.loan_application import LoanApplication
+from models.loan_document import LoanDocument
+from models.loan_review import LoanReview
 
 __all__ = [
     "Customer",
@@ -13,5 +16,9 @@ __all__ = [
     "Payee",
     "Transaction",
     "ScreeningResult",
-    "OTPVerification"
+    "OTPVerification",
+    "LoanApplication",
+    "LoanDocument",
+    "LoanReview"
 ]
+

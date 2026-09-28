@@ -5,6 +5,9 @@
 -- ==========================================================
 
 -- Drop tables in reverse order of foreign key dependencies
+DROP TABLE IF EXISTS LOAN_REVIEW;
+DROP TABLE IF EXISTS LOAN_DOCUMENT;
+DROP TABLE IF EXISTS LOAN_APPLICATION;
 DROP TABLE IF EXISTS OTP_VERIFICATION;
 DROP TABLE IF EXISTS SCREENING_RESULT;
 DROP TABLE IF EXISTS TRANSACTION;
@@ -106,7 +109,79 @@ CREATE TABLE OTP_VERIFICATION (
         REFERENCES TRANSACTION(transaction_id) ON DELETE SET NULL ON UPDATE CASCADE
 );
 
+-- 7. LOAN_APPLICATION TABLE
+-- Stores online loan applications with applicant profile, financial details, and statuses
+CREATE TABLE LOAN_APPLICATION (
+    loan_id INT AUTO_INCREMENT PRIMARY KEY,
+    applicant_name VARCHAR(100) NOT NULL,
+    mobile VARCHAR(15) NOT NULL,
+    email VARCHAR(100) NOT NULL,
+    address TEXT NOT NULL,
+    dob VARCHAR(20) NOT NULL,
+    occupation VARCHAR(50) NOT NULL,
+    income DECIMAL(15, 2) NOT NULL,
+    loan_type VARCHAR(50) NOT NULL,
+    requested_amount DECIMAL(15, 2) NOT NULL,
+    loan_purpose TEXT NOT NULL,
+    repayment_period VARCHAR(30) NOT NULL,
+    application_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(40) NOT NULL DEFAULT 'Submitted',
+    overall_score DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+    CONSTRAINT chk_loan_status CHECK (status IN ('Submitted', 'Document Verification', 'Manual Review', 'Approved', 'Rejected', 'More Information Required')),
+    CONSTRAINT chk_loan_amount CHECK (requested_amount > 0.00),
+    CONSTRAINT chk_loan_income CHECK (income >= 0.00)
+);
+
+-- 8. LOAN_DOCUMENT TABLE
+-- Stores uploaded certificates/identity documents, individual screening metrics, and verification scores
+CREATE TABLE LOAN_DOCUMENT (
+    document_id INT AUTO_INCREMENT PRIMARY KEY,
+    loan_id INT NOT NULL,
+    document_type VARCHAR(50) NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(500) NOT NULL,
+    file_size INT NOT NULL,
+    mime_type VARCHAR(100) NOT NULL,
+    sha256_hash VARCHAR(64) NOT NULL,
+    extracted_text TEXT,
+    extracted_doc_number VARCHAR(100),
+    issuing_authority VARCHAR(150),
+    detected_date VARCHAR(50),
+    name_match_status VARCHAR(50) DEFAULT 'Pending',
+    file_validity_score DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+    text_consistency_score DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+    identity_consistency_score DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+    qr_verification_score DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+    signature_check_score DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+    integrity_check_score DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+    verification_score DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+    verification_status VARCHAR(50) NOT NULL DEFAULT 'UNABLE TO VERIFY',
+    verification_details TEXT,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_loandoc_app FOREIGN KEY (loan_id) 
+        REFERENCES LOAN_APPLICATION(loan_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT chk_loandoc_status CHECK (verification_status IN ('PASS', 'REVIEW REQUIRED', 'UNABLE TO VERIFY'))
+);
+
+-- 9. LOAN_REVIEW TABLE
+-- Stores official bank officer manual review entries, status modifications, and audit comments
+CREATE TABLE LOAN_REVIEW (
+    review_id INT AUTO_INCREMENT PRIMARY KEY,
+    loan_id INT NOT NULL,
+    officer_name VARCHAR(100) NOT NULL DEFAULT 'Bank Officer',
+    officer_status VARCHAR(40) NOT NULL,
+    officer_comments TEXT NOT NULL,
+    reviewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_loanreview_app FOREIGN KEY (loan_id) 
+        REFERENCES LOAN_APPLICATION(loan_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT chk_review_status CHECK (officer_status IN ('Submitted', 'Document Verification', 'Manual Review', 'Approved', 'Rejected', 'More Information Required'))
+);
+
 -- Indexes for query optimization
 CREATE INDEX idx_txn_account ON TRANSACTION(account_id);
 CREATE INDEX idx_txn_date ON TRANSACTION(transaction_date);
 CREATE INDEX idx_screening_decision ON SCREENING_RESULT(decision);
+CREATE INDEX idx_loan_status ON LOAN_APPLICATION(status);
+CREATE INDEX idx_loandoc_loan ON LOAN_DOCUMENT(loan_id);
+CREATE INDEX idx_loanreview_loan ON LOAN_REVIEW(loan_id);
+

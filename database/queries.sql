@@ -205,3 +205,58 @@ JOIN ACCOUNT a ON t.account_id = a.account_id
 WHERE a.customer_id = 1 
   AND t.transaction_type = 'Withdrawal'
 ORDER BY t.transaction_date DESC;
+
+
+-- ----------------------------------------------------------
+-- 9. ONLINE LOAN APPLICATION & DOCUMENT VERIFICATION QUERIES
+-- ----------------------------------------------------------
+
+-- Fetch all loan applications with composite scores and document counts
+SELECT 
+    la.loan_id,
+    la.applicant_name,
+    la.mobile,
+    la.loan_type,
+    la.requested_amount,
+    la.income,
+    la.status,
+    la.overall_score,
+    COUNT(ld.document_id) AS total_documents,
+    SUM(CASE WHEN ld.verification_status = 'PASS' THEN 1 ELSE 0 END) AS passed_documents
+FROM LOAN_APPLICATION la
+LEFT JOIN LOAN_DOCUMENT ld ON la.loan_id = ld.loan_id
+GROUP BY la.loan_id
+ORDER BY la.loan_id DESC;
+
+-- Detailed Document Verification Score Breakdown for a specific loan
+SELECT 
+    ld.document_id,
+    ld.loan_id,
+    ld.document_type,
+    ld.file_name,
+    ld.extracted_doc_number,
+    ld.name_match_status,
+    ld.file_validity_score,
+    ld.text_consistency_score,
+    ld.identity_consistency_score,
+    ld.qr_verification_score,
+    ld.signature_check_score,
+    ld.integrity_check_score,
+    ld.verification_score,
+    ld.verification_status
+FROM LOAN_DOCUMENT ld
+WHERE ld.loan_id = 1;
+
+-- Fetch Bank Officer Audit Trail for Loan Reviews
+SELECT 
+    lr.review_id,
+    lr.loan_id,
+    la.applicant_name,
+    lr.officer_name,
+    lr.officer_status,
+    lr.officer_comments,
+    lr.reviewed_at
+FROM LOAN_REVIEW lr
+JOIN LOAN_APPLICATION la ON lr.loan_id = la.loan_id
+ORDER BY lr.reviewed_at DESC;
+

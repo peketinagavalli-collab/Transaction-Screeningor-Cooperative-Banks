@@ -114,3 +114,25 @@ $$\text{RiskScore} = w_1(\text{RuleRisk}) + w_2(\text{StatisticalRisk}) + w_3(\t
 - Virtual phone notification displays simulated 6-digit OTP.
 - Verifies SHA-256 hash in `OTP_VERIFICATION` table.
 - Output clearly distinguishes between authentication verification and screening surveillance risk.
+
+---
+
+## 📝 Online Loan Application & Certificate Verification
+- **Customer Online Portal:** Submit loan requests with personal profile, financial details, and supporting documents.
+- **Supported Documents:** Aadhaar/Identity Proof, Address Proof, Income Certificate, Salary Slip, Bank Statement, Educational Certificate, and Other Supporting Documents.
+- **Supported Formats:** PDF, JPG, JPEG, PNG (validated magic bytes and 10MB size limit).
+- **Automated Preliminary Verification:**
+  - File format validity & readability inspection.
+  - Multi-engine text & entity extraction (Aadhaar number, PAN, certificate reference numbers, issuing authority, dates).
+  - Cross-consistency & fuzzy token identity matching against entered applicant info.
+  - OpenCV quadrant QR code / barcode detection, structured XML/JSON payload decoding, and payload cross-matching.
+  - Digital signature verification (PDF `/Sig`, `/ByteRange`, `/AcroForm`, and visual digital stamp markers).
+  - Document integrity & tampering screening (EXIF software tags like Photoshop/Canva, PDF modification timestamps, DPI compression).
+- **Academic Verification Scoring Formula:**
+  $$\text{DocumentScore} = 0.20 \times \text{FileValidity} + 0.20 \times \text{TextConsistency} + 0.20 \times \text{IdentityConsistency} + 0.15 \times \text{QRVerification} + 0.10 \times \text{SignatureCheck} + 0.15 \times \text{IntegrityCheck}$$
+- **Screening Classification Results:**
+  - `PASS` (*"Document passed automated screening"*)
+  - `REVIEW REQUIRED` (*"Document requires manual verification"*)
+  - `UNABLE TO VERIFY` (*"Unable to verify automatically"*)
+- **Bank Officer Review Workspace:** Filterable underwriter dashboard to inspect applicant dossiers, review document audit trails, and submit official decisions (*Submitted, Document Verification, Manual Review, Approved, Rejected, More Information Required*) with timestamped audit records in `LOAN_REVIEW`.
+

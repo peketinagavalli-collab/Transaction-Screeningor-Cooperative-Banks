@@ -27,6 +27,9 @@ def init_database(force_recreate: bool = False):
     # If using SQLite, adapt DDL statements (remove constraints/syntax specific to MySQL)
     if "SQLite" in engine:
         sqlite_ddl = """
+        DROP TABLE IF EXISTS LOAN_REVIEW;
+        DROP TABLE IF EXISTS LOAN_DOCUMENT;
+        DROP TABLE IF EXISTS LOAN_APPLICATION;
         DROP TABLE IF EXISTS OTP_VERIFICATION;
         DROP TABLE IF EXISTS SCREENING_RESULT;
         DROP TABLE IF EXISTS "TRANSACTION";
@@ -100,12 +103,67 @@ def init_database(force_recreate: bool = False):
             FOREIGN KEY (customer_id) REFERENCES CUSTOMER(customer_id) ON DELETE CASCADE,
             FOREIGN KEY (transaction_id) REFERENCES "TRANSACTION"(transaction_id) ON DELETE SET NULL
         );
+
+        CREATE TABLE LOAN_APPLICATION (
+            loan_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            applicant_name TEXT NOT NULL,
+            mobile TEXT NOT NULL,
+            email TEXT NOT NULL,
+            address TEXT NOT NULL,
+            dob TEXT NOT NULL,
+            occupation TEXT NOT NULL,
+            income REAL NOT NULL,
+            loan_type TEXT NOT NULL,
+            requested_amount REAL NOT NULL,
+            loan_purpose TEXT NOT NULL,
+            repayment_period TEXT NOT NULL,
+            application_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            status TEXT NOT NULL DEFAULT 'Submitted',
+            overall_score REAL NOT NULL DEFAULT 0.0
+        );
+
+        CREATE TABLE LOAN_DOCUMENT (
+            document_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            loan_id INTEGER NOT NULL,
+            document_type TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            mime_type TEXT NOT NULL,
+            sha256_hash TEXT NOT NULL,
+            extracted_text TEXT,
+            extracted_doc_number TEXT,
+            issuing_authority TEXT,
+            detected_date TEXT,
+            name_match_status TEXT DEFAULT 'Pending',
+            file_validity_score REAL NOT NULL DEFAULT 0.0,
+            text_consistency_score REAL NOT NULL DEFAULT 0.0,
+            identity_consistency_score REAL NOT NULL DEFAULT 0.0,
+            qr_verification_score REAL NOT NULL DEFAULT 0.0,
+            signature_check_score REAL NOT NULL DEFAULT 0.0,
+            integrity_check_score REAL NOT NULL DEFAULT 0.0,
+            verification_score REAL NOT NULL DEFAULT 0.0,
+            verification_status TEXT NOT NULL DEFAULT 'UNABLE TO VERIFY',
+            verification_details TEXT,
+            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (loan_id) REFERENCES LOAN_APPLICATION(loan_id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE LOAN_REVIEW (
+            review_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            loan_id INTEGER NOT NULL,
+            officer_name TEXT NOT NULL DEFAULT 'Bank Officer',
+            officer_status TEXT NOT NULL,
+            officer_comments TEXT NOT NULL,
+            reviewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (loan_id) REFERENCES LOAN_APPLICATION(loan_id) ON DELETE CASCADE
+        );
         """
         DatabaseManager.execute_raw(sqlite_ddl)
     else:
         DatabaseManager.execute_raw(schema_sql)
 
-    # Seed initial entities and realistic transactions
+    # Seed initial entities, transactions, and sample loan applications
     seed_sample_data()
     print("Database successfully initialized and seeded with sample data.")
 
@@ -167,8 +225,6 @@ def seed_sample_data():
         )
 
     # 4. Realistic Seed Transactions & Historical Cash Withdrawals
-    # Customer 1 (Ramesh, Account 1) Historical Cash Withdrawals (₹5,000 - ₹10,000 typical)
-    # Plus regular inter-account and vendor transfers.
     base_txns = [
         # Customer 1 withdrawal history for pattern comparison
         (1, None, 5000.00, "Withdrawal", "2026-01-10 10:30:00", "Main Branch ATM", "Completed", 0.12, 10.0, 10.0, 12.0, "Normal", "Routine ATM withdrawal"),
@@ -194,25 +250,21 @@ def seed_sample_data():
         (4, 4, 48000.00, "Transfer", "2026-03-05 14:10:00", "NEFT", "Completed", 0.95, 20.0, 20.0, 26.0, "Normal", "Cotton mill supply batch 2"),
 
         # Academic Case 1: Rule 1 (A AND N -> Review Required)
-        # Suresh (Acc 3) transfers ₹75,000 (A=True) to New Payee 3 (N=True), moderate Z-score
         (3, 3, 75000.00, "Transfer", "2026-03-18 10:15:00", "NetBanking", "Under Review", 2.15, 60.0, 30.0, 52.0, "Review Required", "Amount exceeds threshold (₹50,000); New payee detected for this account"),
 
         # Academic Case 2: Rule 2 (A AND N AND Z -> Suspicious)
-        # Ramesh (Acc 1) suddenly transfers ₹90,000 (A=True) to New Payee 6 (N=True) with Z-score 7.00 (Z=True)
         (1, 6, 90000.00, "Transfer", "2026-03-20 18:45:00", "NetBanking", "Flagged", 7.00, 85.0, 65.0, 82.0, "Suspicious", "Amount exceeds threshold; New payee detected; Statistical anomaly is high (Z=7.00); DMGT Rule 2 fired (A ∧ N ∧ Z)"),
 
         # Academic Case 3: Rule 3 (Z AND G -> Review Required)
-        # Govind (Acc 7) transfers ₹45,000 (A=False) to Payee 7, but rapid out-degree spike (G=True) and Z-score 3.8 (Z=True)
         (7, 7, 45000.00, "Transfer", "2026-03-21 12:00:00", "UPI", "Under Review", 3.80, 40.0, 80.0, 62.0, "Review Required", "High statistical Z-score anomaly (Z=3.80); Graph network behavior is unusual (DMGT Rule 3 fired: Z ∧ G)"),
 
         # Academic Case 4: Rule 4 (A AND N AND Z AND G -> Suspicious)
-        # Balwanth (Acc 5) transfers ₹150,000 to New Payee 6, rapid hub connection, Z-score 8.2 (All 4 propositions True)
         (5, 6, 150000.00, "Transfer", "2026-03-22 14:30:00", "RTGS", "Flagged", 8.20, 95.0, 90.0, 94.0, "Suspicious", "All conditions met: High Amount, New Payee, High Z-Score (Z=8.20), High Graph Centrality Risk (DMGT Rule 4 fired: A ∧ N ∧ Z ∧ G)")
     ]
 
     for acc_id, payee_id, amt, t_type, t_date, loc, status, z_val, r_score, g_score, risk_val, decision, reasons in base_txns:
         txn_id = DatabaseManager.execute_query(
-            "INSERT INTO TRANSACTION (account_id, payee_id, amount, transaction_type, transaction_date, location, status) "
+            "INSERT INTO \"TRANSACTION\" (account_id, payee_id, amount, transaction_type, transaction_date, location, status) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (acc_id, payee_id, amt, t_type, t_date, loc, status),
             commit=True
@@ -237,8 +289,292 @@ def seed_sample_data():
         commit=True
     )
 
+    # 6. Seed Sample Realistic Loan Applications with Documents & Officer Reviews
+    seed_loan_applications()
+
     # Also export to sample_transactions.csv for easy reference
     export_sample_csv()
+
+def seed_loan_applications():
+    """Seeds realistic cooperative bank loan applications for instant testing."""
+    sample_loans = [
+        # Loan 1: Farmer Agricultural Credit (Approved)
+        {
+            "applicant_name": "Ramesh Kumar Sharma",
+            "mobile": "9876543210",
+            "email": "ramesh.sharma@coopbank.in",
+            "address": "Village Pipariya, Tehsil Hoshangabad, MP - 461001",
+            "dob": "1982-05-14",
+            "occupation": "Farmer / Agriculturalist",
+            "income": 45000.00,
+            "loan_type": "Agricultural Credit Loan",
+            "requested_amount": 250000.00,
+            "loan_purpose": "Purchase of high-yield wheat seeds, drip irrigation equipment, and organic fertilizer for Rabi harvest season.",
+            "repayment_period": "36 Months",
+            "application_date": "2026-03-10 11:20:00",
+            "status": "Approved",
+            "overall_score": 92.5,
+            "documents": [
+                {
+                    "document_type": "Aadhaar/Identity Proof",
+                    "file_name": "ramesh_aadhaar_card.pdf",
+                    "file_path": "data/uploads/loan_documents/seed_ramesh_aadhaar.pdf",
+                    "file_size": 142850,
+                    "mime_type": "application/pdf",
+                    "sha256_hash": "a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0",
+                    "extracted_text": "Government of India Unique Identification Authority of India UIDAI Name: Ramesh Kumar Sharma DOB: 14/05/1982 Gender: Male 9821-4820-1928",
+                    "extracted_doc_number": "9821-4820-1928",
+                    "issuing_authority": "Unique Identification Authority of India",
+                    "detected_date": "14/05/1982",
+                    "name_match_status": "Matched (Exact/Complete)",
+                    "file_validity_score": 1.0,
+                    "text_consistency_score": 0.95,
+                    "identity_consistency_score": 1.0,
+                    "qr_verification_score": 0.95,
+                    "signature_check_score": 0.85,
+                    "integrity_check_score": 1.0,
+                    "verification_score": 96.0,
+                    "verification_status": "PASS"
+                },
+                {
+                    "document_type": "Income Certificate",
+                    "file_name": "ramesh_income_cert_2026.pdf",
+                    "file_path": "data/uploads/loan_documents/seed_ramesh_income.pdf",
+                    "file_size": 218900,
+                    "mime_type": "application/pdf",
+                    "sha256_hash": "b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef01",
+                    "extracted_text": "Revenue Department Government Certificate of Annual Income Tahsildar Certified that Shri Ramesh Kumar Sharma Annual Income Rs 5,40,000 Digitally signed by Tahsildar Ref: REV-2026-89102",
+                    "extracted_doc_number": "REV-2026-89102",
+                    "issuing_authority": "Revenue Department",
+                    "detected_date": "10/02/2026",
+                    "name_match_status": "Matched (Exact/Complete)",
+                    "file_validity_score": 1.0,
+                    "text_consistency_score": 0.90,
+                    "identity_consistency_score": 0.95,
+                    "qr_verification_score": 0.80,
+                    "signature_check_score": 0.85,
+                    "integrity_check_score": 0.95,
+                    "verification_score": 89.0,
+                    "verification_status": "PASS"
+                }
+            ],
+            "reviews": [
+                {
+                    "officer_name": "A. K. Mukherjee (Chief Credit Manager)",
+                    "officer_status": "Approved",
+                    "officer_comments": "Verified land revenue records (Khasra/Khatauni) and crop yield history. Automated screening score 92.5% passed. Agricultural loan approved under priority sector lending guidelines.",
+                    "reviewed_at": "2026-03-12 14:30:00"
+                }
+            ]
+        },
+        # Loan 2: Small Business Loan (Under Manual Review)
+        {
+            "applicant_name": "Suresh Patel",
+            "mobile": "9823456781",
+            "email": "suresh.patel@coopbank.in",
+            "address": "Shop No 14, Main Market, Anand, Gujarat - 388001",
+            "dob": "1978-11-22",
+            "occupation": "Small Business Owner / Dairy Distributor",
+            "income": 75000.00,
+            "loan_type": "Small Business / MSME Loan",
+            "requested_amount": 500000.00,
+            "loan_purpose": "Expansion of commercial milk chilling unit and cold storage delivery van.",
+            "repayment_period": "48 Months",
+            "application_date": "2026-03-22 09:15:00",
+            "status": "Manual Review",
+            "overall_score": 68.5,
+            "documents": [
+                {
+                    "document_type": "Bank Statement",
+                    "file_name": "suresh_bank_statement_6m.pdf",
+                    "file_path": "data/uploads/loan_documents/seed_suresh_bank.pdf",
+                    "file_size": 312000,
+                    "mime_type": "application/pdf",
+                    "sha256_hash": "c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef012",
+                    "extracted_text": "District Central Cooperative Bank Account Statement Suresh Patel Account 3091823901 IFSC COOP0001003 Balance 95000",
+                    "extracted_doc_number": "3091823901",
+                    "issuing_authority": "District Central Cooperative Bank",
+                    "detected_date": "15/03/2026",
+                    "name_match_status": "Matched (Exact/Complete)",
+                    "file_validity_score": 1.0,
+                    "text_consistency_score": 0.85,
+                    "identity_consistency_score": 0.90,
+                    "qr_verification_score": 0.70,
+                    "signature_check_score": 0.65,
+                    "integrity_check_score": 0.90,
+                    "verification_score": 83.0,
+                    "verification_status": "PASS"
+                },
+                {
+                    "document_type": "Income Certificate",
+                    "file_name": "suresh_tax_returns_scan.jpg",
+                    "file_path": "data/uploads/loan_documents/seed_suresh_tax.jpg",
+                    "file_size": 195000,
+                    "mime_type": "image/jpeg",
+                    "sha256_hash": "d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0123",
+                    "extracted_text": "Scanned income return summary document. Text resolution is low.",
+                    "extracted_doc_number": "ITR-2025-981",
+                    "issuing_authority": "Revenue Department",
+                    "detected_date": "2025-10-15",
+                    "name_match_status": "Partial Match (Requires Verification)",
+                    "file_validity_score": 0.85,
+                    "text_consistency_score": 0.45,
+                    "identity_consistency_score": 0.60,
+                    "qr_verification_score": 0.50,
+                    "signature_check_score": 0.50,
+                    "integrity_check_score": 0.60,
+                    "verification_score": 54.0,
+                    "verification_status": "REVIEW REQUIRED"
+                }
+            ],
+            "reviews": [
+                {
+                    "officer_name": "System Auto-Screening Bot",
+                    "officer_status": "Manual Review",
+                    "officer_comments": "Automated screening detected 1 document requiring manual verification (Tax returns scan has lower contrast). Routed to Senior Loan Officer for branch inspection.",
+                    "reviewed_at": "2026-03-22 09:16:00"
+                }
+            ]
+        },
+        # Loan 3: New Customer Loan (Submitted / Document Verification Stage)
+        {
+            "applicant_name": "Anjali Deshmukh",
+            "mobile": "9765432109",
+            "email": "anjali.deshmukh@coopbank.in",
+            "address": "Plot 45, Cotton Market Road, Wardha, Maharashtra - 442001",
+            "dob": "1990-08-19",
+            "occupation": "Salaried / Textile Engineer",
+            "income": 95000.00,
+            "loan_type": "Home / Rural Housing Loan",
+            "requested_amount": 1200000.00,
+            "loan_purpose": "Construction of residential rural housing on ancestral land plot.",
+            "repayment_period": "120 Months",
+            "application_date": "2026-03-25 15:40:00",
+            "status": "Document Verification",
+            "overall_score": 88.0,
+            "documents": [
+                {
+                    "document_type": "Salary Slip",
+                    "file_name": "anjali_salary_slip_feb2026.pdf",
+                    "file_path": "data/uploads/loan_documents/seed_anjali_salary.pdf",
+                    "file_size": 178000,
+                    "mime_type": "application/pdf",
+                    "sha256_hash": "e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef01234",
+                    "extracted_text": "Apex Cotton Mills Ltd Pay Slip for February 2026 Employee Name: Anjali Deshmukh Designation: Senior Engineer Basic Pay: 65000 Gross: 95000 Net Pay: 84200",
+                    "extracted_doc_number": "EMP-9821",
+                    "issuing_authority": "Apex Cotton Mills",
+                    "detected_date": "28/02/2026",
+                    "name_match_status": "Matched (Exact/Complete)",
+                    "file_validity_score": 1.0,
+                    "text_consistency_score": 0.95,
+                    "identity_consistency_score": 1.0,
+                    "qr_verification_score": 0.70,
+                    "signature_check_score": 0.75,
+                    "integrity_check_score": 0.95,
+                    "verification_score": 88.0,
+                    "verification_status": "PASS"
+                }
+            ],
+            "reviews": [
+                {
+                    "officer_name": "System Auto-Screening Bot",
+                    "officer_status": "Document Verification",
+                    "officer_comments": "Automated document screening passed with score 88.0%. Awaiting bank officer inspection of land registry deeds.",
+                    "reviewed_at": "2026-03-25 15:41:00"
+                }
+            ]
+        }
+    ]
+
+    for loan_data in sample_loans:
+        loan_id = DatabaseManager.execute_query("""
+            INSERT INTO LOAN_APPLICATION (
+                applicant_name, mobile, email, address, dob, occupation,
+                income, loan_type, requested_amount, loan_purpose,
+                repayment_period, application_date, status, overall_score
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            loan_data["applicant_name"],
+            loan_data["mobile"],
+            loan_data["email"],
+            loan_data["address"],
+            loan_data["dob"],
+            loan_data["occupation"],
+            loan_data["income"],
+            loan_data["loan_type"],
+            loan_data["requested_amount"],
+            loan_data["loan_purpose"],
+            loan_data["repayment_period"],
+            loan_data["application_date"],
+            loan_data["status"],
+            loan_data["overall_score"]
+        ), commit=True)
+
+        for doc in loan_data.get("documents", []):
+            import json
+            details_json = json.dumps({
+                "formula_breakdown": {
+                    "file_validity": {"weight": 0.20, "score": doc["file_validity_score"], "component_pct": doc["file_validity_score"] * 20},
+                    "text_consistency": {"weight": 0.20, "score": doc["text_consistency_score"], "component_pct": doc["text_consistency_score"] * 20},
+                    "identity_consistency": {"weight": 0.20, "score": doc["identity_consistency_score"], "component_pct": doc["identity_consistency_score"] * 20},
+                    "qr_verification": {"weight": 0.15, "score": doc["qr_verification_score"], "component_pct": doc["qr_verification_score"] * 15},
+                    "signature_check": {"weight": 0.10, "score": doc["signature_check_score"], "component_pct": doc["signature_check_score"] * 10},
+                    "integrity_check": {"weight": 0.15, "score": doc["integrity_check_score"], "component_pct": doc["integrity_check_score"] * 15}
+                },
+                "status_message": "Document passed automated screening" if doc["verification_status"] == "PASS" else "Document requires manual verification"
+            })
+            DatabaseManager.execute_query("""
+                INSERT INTO LOAN_DOCUMENT (
+                    loan_id, document_type, file_name, file_path, file_size, mime_type,
+                    sha256_hash, extracted_text, extracted_doc_number, issuing_authority,
+                    detected_date, name_match_status, file_validity_score, text_consistency_score,
+                    identity_consistency_score, qr_verification_score, signature_check_score,
+                    integrity_check_score, verification_score, verification_status,
+                    verification_details, uploaded_at
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s
+                )
+            """, (
+                loan_id,
+                doc["document_type"],
+                doc["file_name"],
+                doc["file_path"],
+                doc["file_size"],
+                doc["mime_type"],
+                doc["sha256_hash"],
+                doc["extracted_text"],
+                doc["extracted_doc_number"],
+                doc["issuing_authority"],
+                doc["detected_date"],
+                doc["name_match_status"],
+                doc["file_validity_score"],
+                doc["text_consistency_score"],
+                doc["identity_consistency_score"],
+                doc["qr_verification_score"],
+                doc["signature_check_score"],
+                doc["integrity_check_score"],
+                doc["verification_score"],
+                doc["verification_status"],
+                details_json,
+                loan_data["application_date"]
+            ), commit=True)
+
+        for rev in loan_data.get("reviews", []):
+            DatabaseManager.execute_query("""
+                INSERT INTO LOAN_REVIEW (loan_id, officer_name, officer_status, officer_comments, reviewed_at)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (
+                loan_id,
+                rev["officer_name"],
+                rev["officer_status"],
+                rev["officer_comments"],
+                rev["reviewed_at"]
+            ), commit=True)
 
 def export_sample_csv():
     """Exports seeded transactions to data/sample_transactions.csv."""
@@ -266,7 +602,7 @@ def export_sample_csv():
             sr.risk_score,
             sr.decision,
             sr.reasons
-        FROM TRANSACTION t
+        FROM "TRANSACTION" t
         JOIN ACCOUNT a ON t.account_id = a.account_id
         JOIN CUSTOMER c ON a.customer_id = c.customer_id
         LEFT JOIN PAYEE p ON t.payee_id = p.payee_id
@@ -277,3 +613,4 @@ def export_sample_csv():
 
 if __name__ == "__main__":
     init_database(force_recreate=True)
+

@@ -210,7 +210,9 @@ with c1:
     - **[01 📊 Dashboard](Dashboard)**: Macro transaction analytics, decision breakdown & risk distribution.
     - **[02 🔍 Screening](Screening)**: Real-time 11-step transaction screening pipeline with deep explainability.
     - **[03 💵 Large Withdrawal OTP](Large_Withdrawal_OTP)**: Customer-specific historical withdrawal anomaly detection & simulated 2FA OTP flow.
+    - **[11 📝 Online Loan Application](Online_Loan_Application)**: Customer digital loan application with automated preliminary certificate screening & officer review.
     """)
+
 
 with c2:
     c2.markdown("""
